@@ -7,7 +7,7 @@ types, and full effect descriptions. Plus the runewords you're **one rune
 short** of, the complete runeword list by level, and all Horadric cube
 recipes.
 
-![D2R Companion — my runes view](d2screenshot.png)
+![D2R Companion — my runes view](screenshot.png)
 
 ## Features
 
@@ -72,7 +72,8 @@ embedded templates (best effort; presence detection is the reliable part).
 d2rc.py            GUI (main entry — python3 d2rc.py)
 d2r_runewords.py   CLI + scanning core + hotkey grab
 d2r_data.py        runeword + cube recipe database (single source of truth)
-d2screenshot.png   calibration / demo screenshot
+screenshot.png     app UI screenshot (used in this README)
+d2screenshot.png   calibration screenshot (slot layout)
 ```
 
 ## Requirements
