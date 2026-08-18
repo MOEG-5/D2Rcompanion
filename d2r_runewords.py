@@ -27,8 +27,10 @@ The hotkey comes from the config file (~/.config/d2r_runewords/config.json,
 
 Setup / requirements
 --------------------
-  * X11 session (Xfce etc.), python3, PIL, numpy, scipy, python-xlib,
-    ImageMagick's `import`, notify-send.
+  * Linux (X11): python3, PIL, numpy, python-xlib, ImageMagick's `import`,
+    notify-send.  Windows: plain Python + PIL + numpy — screen capture uses
+    PIL ImageGrab and the global hotkey uses RegisterHotKey (ctypes), so no
+    extra packages are needed.
   * Play Diablo 2: Resurrected in fullscreen (or borderless windowed) at the
     same resolution as the screenshot used to calibrate (1920x1080 by
     default) — the layout scales automatically with the screen size, but the
@@ -128,8 +130,12 @@ def parse_digit_templates():
 # Screen capture
 # --------------------------------------------------------------------------
 def capture_screen(cfg):
-    """Grab the whole X11 root window with ImageMagick `import`."""
+    """Grab the screen — PIL ImageGrab on Windows, `import` on X11."""
     out = tempfile.mktemp(suffix=".png", prefix="d2r_cap_")
+    if sys.platform.startswith("win"):
+        from PIL import ImageGrab
+        ImageGrab.grab().save(out)
+        return out
     r = subprocess.run(["import", "-window", "root", out],
                        capture_output=True, text=True)
     if r.returncode != 0 or not os.path.exists(out):
@@ -186,6 +192,62 @@ def otsu(values):
     return th, lo_mean, hi_mean
 
 
+def _label_components(binary):
+    """4-connected component labeling — scipy.ndimage.label drop-in.
+
+    Two-pass union-find over a small binary patch (<= ~20x20 px), so the
+    plain-Python loop is effectively free.  Keeps the scanner free of scipy
+    (~150 MB when bundled into a frozen build).
+    """
+    H, W = binary.shape
+    lab = np.zeros((H, W), dtype=np.int32)
+    parent = [0]                        # 1-based provisional label -> root
+    n = 0
+
+    def find(i):
+        while parent[i] != i:
+            parent[i] = parent[parent[i]]
+            i = parent[i]
+        return i
+
+    def union(a, b):
+        ra, rb = find(a), find(b)
+        if ra != rb:
+            parent[rb] = ra
+
+    for y in range(H):
+        for x in range(W):
+            if not binary[y, x]:
+                continue
+            left = lab[y, x - 1] if x > 0 else 0
+            up = lab[y - 1, x] if y > 0 else 0
+            if left and up:
+                if left != up:
+                    union(left, up)
+                lab[y, x] = left
+            elif left:
+                lab[y, x] = left
+            elif up:
+                lab[y, x] = up
+            else:
+                n += 1
+                parent.append(n)
+                lab[y, x] = n
+
+    # second pass: collapse every pixel to its root, renumber 1..k
+    roots = {}
+    k = 0
+    for y in range(H):
+        for x in range(W):
+            if lab[y, x]:
+                r = find(lab[y, x])
+                if r not in roots:
+                    k += 1
+                    roots[r] = k
+                lab[y, x] = roots[r]
+    return lab, k
+
+
 def read_digit_count(gray, cfg, scale, stats, templates):
     """Best-effort stack count from the white digit in the slot's corner."""
     x0, y0 = stats["x0"], stats["y0"]
@@ -199,12 +261,12 @@ def read_digit_count(gray, cfg, scale, stats, templates):
     if reg.size == 0:
         return 1
     binary = reg > cfg["digit_threshold"]
-    from scipy import ndimage
-    lab, n = ndimage.label(binary)
+    lab, n = _label_components(binary)
     if n == 0:
         return 1
-    sizes = ndimage.sum(binary, lab, range(1, n + 1))
-    best = int(np.argmax(sizes)) + 1
+    sizes = np.bincount(lab.ravel())
+    sizes[0] = 0                        # ignore the background class
+    best = int(np.argmax(sizes))
     ys, xs = np.where(lab == best)
     H, W = 14, 10
     canvas = np.zeros((H, W), dtype=float)
@@ -330,9 +392,90 @@ def fmt_result(res, cfg, show_near=True):
 
 
 # --------------------------------------------------------------------------
-# F8 hotkey listener (XGrabKey on root)
+# Hotkey listener — XGrabKey on X11, RegisterHotKey on Windows
 # --------------------------------------------------------------------------
+def _notify(title, text, critical=False):
+    """Desktop notification: notify-send on Linux, a beep on Windows."""
+    if sys.platform.startswith("win"):
+        try:
+            import ctypes
+            ctypes.windll.user32.MessageBeep(0x10 if critical else 0)
+        except Exception:
+            pass
+        return
+    args = ["notify-send"] + (["-u", "critical"] if critical else ["-t", "8000"])
+    subprocess.run(args + [title, text], capture_output=True)
+
+
+# Windows virtual-key codes for the keysyms the GUI accepts as hotkeys.
+_WIN_VK = {
+    **{f"F{i}": 0x6F + i for i in range(1, 25)},       # VK_F1 = 0x70
+    **{str(i): 0x30 + i for i in range(10)},
+    **{chr(c): ord(chr(c).upper()) for c in range(ord("a"), ord("z") + 1)},
+    "Home": 0x24, "End": 0x23, "Prior": 0x21, "Next": 0x22,
+    "Insert": 0x2D,
+    **{f"KP_{i}": 0x60 + i for i in range(10)},
+    "KP_Divide": 0x6F, "KP_Multiply": 0x6A, "KP_Subtract": 0x6D,
+    "KP_Add": 0x6B, "KP_Decimal": 0x6E,
+    "comma": 0xBC, "period": 0xBE, "minus": 0xBD, "equal": 0xBB,
+    "semicolon": 0xBA, "apostrophe": 0xDE, "slash": 0xBF,
+    "backslash": 0xDC, "bracketleft": 0xDB, "bracketright": 0xDD,
+    "grave": 0xC0,
+    # shifted symbols map to their base key (no modifier is registered)
+    "exclam": 0x31, "at": 0x32, "numbersign": 0x33, "dollar": 0x34,
+    "percent": 0x35, "asciicircum": 0x36, "ampersand": 0x37,
+    "asterisk": 0x38, "parenleft": 0x39, "parenright": 0x30,
+    "underscore": 0xBD, "plus": 0xBB, "braceleft": 0xDB, "braceright": 0xDD,
+    "bar": 0xDC, "colon": 0xBA, "quotedbl": 0xDE, "question": 0xBF,
+    "less": 0xBC, "greater": 0xBE, "asciitilde": 0xC0,
+}
+
+
+def win_vk(keysym):
+    """Map a tkinter keysym to a Windows virtual-key code, or None."""
+    if keysym in _WIN_VK:
+        return _WIN_VK[keysym]
+    if len(keysym) == 1 and keysym.isalnum():
+        return ord(keysym.upper())
+    return None
+
+
+def _listen_win(cfg, keysym):
+    """Global hotkey on Windows: RegisterHotKey + thread message loop."""
+    import ctypes
+    from ctypes import wintypes
+    user32 = ctypes.windll.user32
+    vk = win_vk(keysym)
+    if vk is None:
+        sys.exit(f"key {keysym} is not supported on Windows — "
+                 "pick a letter, digit, F-key or numpad key")
+    MOD_NOREPEAT, WM_HOTKEY = 0x4000, 0x0312
+    hk_id = 1
+    if not user32.RegisterHotKey(None, hk_id, MOD_NOREPEAT, vk):
+        sys.exit(f"could not register {keysym} (another app owns it?)")
+    print(f"D2R companion listening — press {keysym} with the RUNES tab "
+          "open (Ctrl-C to quit).")
+    sys.stdout.flush()
+    try:
+        msg = wintypes.MSG()
+        while True:
+            r = user32.GetMessageW(ctypes.byref(msg), None, 0, 0)
+            if r <= 0:
+                break
+            if msg.message == WM_HOTKEY and msg.wParam == hk_id:
+                try:
+                    do_capture(cfg, notify=True, verbose=False)
+                except Exception as e:
+                    _notify("D2R Runewords", f"error: {e}", critical=True)
+    finally:
+        user32.UnregisterHotKey(None, hk_id)
+
+
 def listen(cfg):
+    keysym = (cfg.get("hotkey") or "F8")
+    if sys.platform.startswith("win"):
+        _listen_win(cfg, keysym)
+        return
     from Xlib import X, display, XK
     d = display.Display()
     # suppress noisy BadAccess errors while probing modifier combos
@@ -341,7 +484,6 @@ def listen(cfg):
     except Exception:
         pass
     root = d.screen().root
-    keysym = (cfg.get("hotkey") or "F8")
     xk = XK.string_to_keysym(keysym)
     keycode = d.keysym_to_keycode(xk) if xk else None
     if not keycode:
@@ -367,8 +509,7 @@ def listen(cfg):
             try:
                 do_capture(cfg, notify=True, verbose=False)
             except Exception as e:
-                subprocess.run(["notify-send", "-u", "critical", "D2R Runewords", f"error: {e}"],
-                               capture_output=True)
+                _notify("D2R Runewords", f"error: {e}", critical=True)
 
 
 def do_capture(cfg, notify=False, verbose=False):
@@ -390,8 +531,7 @@ def do_capture(cfg, notify=False, verbose=False):
         summary = f"{n_craft} craftable runewords"
         if res["warnings"]:
             summary += " — " + res["warnings"][0]
-        subprocess.run(["notify-send", "-t", "8000", "D2R Runewords", summary],
-                       capture_output=True)
+        _notify("D2R Runewords", summary)
         print(text)
     return text
 

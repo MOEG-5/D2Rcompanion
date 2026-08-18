@@ -165,8 +165,10 @@ class App:
         self.assigning = False
         self._grab_display = None
         self._grab_keycode = None
+        self._win_hk_tid = None          # Windows RegisterHotKey thread id
+        self._win_hk_result = None       # Windows registration result queue
         self._hotkey_thread = None
-        self._hotkey_q = queue.Queue()   # Xlib thread -> main thread
+        self._hotkey_q = queue.Queue()   # hotkey thread -> main thread
 
         self._fonts()
         _setup_style()
@@ -547,6 +549,8 @@ class App:
     def _start_hotkey(self, keysym):
         """Grab `keysym` globally (replacing any previous hotkey)."""
         self._stop_hotkey()
+        if sys.platform.startswith("win"):
+            return self._start_hotkey_win(keysym)
         try:
             from Xlib import X, display, XK
         except ImportError:
@@ -605,8 +609,67 @@ class App:
                          OK)
         return True
 
+    # -- Windows: RegisterHotKey on a dedicated message-loop thread ---------
+    def _start_hotkey_win(self, keysym):
+        vk = core.win_vk(keysym)
+        if vk is None:
+            self._set_status(f"key “{pretty_key(keysym)}” is not supported "
+                             "on Windows — try another key", MISS)
+            return False
+        self.hotkey_keysym = keysym
+        self.hotkey_on = True
+        self._win_hk_result = queue.Queue()
+        self._hotkey_thread = threading.Thread(
+            target=self._hotkey_loop_win, args=(vk,), daemon=True)
+        self._hotkey_thread.start()
+        try:
+            ok, msg = self._win_hk_result.get(timeout=2)
+        except queue.Empty:
+            ok, msg = False, "hotkey registration timed out — try another key"
+        if not ok:
+            self.hotkey_on = False
+            self._set_status(msg, MISS)
+            return False
+        self._set_status(f"Hotkey {pretty_key(keysym)} active — open the RUNES "
+                         f"tab in D2R and press {pretty_key(keysym)} to scan.",
+                         OK)
+        return True
+
+    def _hotkey_loop_win(self, vk):
+        import ctypes
+        from ctypes import wintypes
+        user32 = ctypes.windll.user32
+        self._win_hk_tid = ctypes.windll.kernel32.GetCurrentThreadId()
+        MOD_NOREPEAT, WM_HOTKEY = 0x4000, 0x0312
+        hk_id = 0x4442
+        if not user32.RegisterHotKey(None, hk_id, MOD_NOREPEAT, vk):
+            self._win_hk_result.put(
+                (False, f"could not grab “{pretty_key(self.hotkey_keysym)}” "
+                        "— another app owns it?"))
+            return
+        self._win_hk_result.put((True, ""))
+        try:
+            msg = wintypes.MSG()
+            while self.hotkey_on:
+                r = user32.GetMessageW(ctypes.byref(msg), None, 0, 0)
+                if r <= 0:
+                    break
+                if msg.message == WM_HOTKEY and msg.wParam == hk_id:
+                    self._hotkey_q.put(self.do_scan)
+        finally:
+            user32.UnregisterHotKey(None, hk_id)
+
     def _stop_hotkey(self):
         self.hotkey_on = False
+        if self._win_hk_tid is not None:
+            try:
+                import ctypes
+                # WM_QUIT wakes the blocking GetMessageW in the hotkey thread
+                ctypes.windll.user32.PostThreadMessageW(
+                    self._win_hk_tid, 0x0012, 0, 0)
+            except Exception:
+                pass
+            self._win_hk_tid = None
         d = self._grab_display
         self._grab_display = None
         if d is not None:

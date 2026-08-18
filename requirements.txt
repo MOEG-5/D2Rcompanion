@@ -1,4 +1,6 @@
+# D2R Companion — Linux (X11) development requirements.
+# The Windows build bundles Pillow + numpy via PyInstaller (see
+# .github/workflows/build-windows.yml); scipy is no longer needed.
 Pillow
 numpy
-scipy
 python-xlib
