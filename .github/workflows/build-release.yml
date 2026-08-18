@@ -45,12 +45,13 @@ jobs:
           python-version: '3.12'
 
       # Linux: use the system python in a venv — tkinter comes from the distro
-      # package (python3-tk). libxcb1 is needed by Pillow's X11 ImageGrab.
+      # package (python3-tk). binutils (objdump) and libpython3.10 are needed
+      # by PyInstaller; libxcb1 by Pillow's X11 ImageGrab.
       - name: Install system dependencies (Linux)
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y python3-tk python3-venv zip xvfb libxcb1
+          sudo apt-get install -y python3-tk python3-venv zip libxcb1 binutils libpython3.10
 
       - name: Install build dependencies (Windows)
         if: runner.os == 'Windows'
@@ -74,31 +75,28 @@ jobs:
         if: runner.os == 'Linux'
         run: venv/bin/pyinstaller --noconfirm --clean d2r_companion.spec
 
-      - name: Smoke test (Windows)
+      - name: Smoke test (Windows — headless selftest)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          $p = Start-Process -FilePath "dist\D2RCompanion\D2RCompanion.exe" -ArgumentList "--image","d2screenshot.png" -PassThru
-          Start-Sleep -Seconds 8
-          if ($p.HasExited) {
-            Write-Error "D2RCompanion.exe exited early (code $($p.ExitCode)) - startup crashed"
+          & .\dist\D2RCompanion\D2RCompanion.exe --selftest d2screenshot.png
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "selftest failed (exit $LASTEXITCODE) - scan engine broken"
             exit 1
           }
-          Write-Output "smoke test OK: process alive after 8s"
-          Stop-Process -Id $p.Id -Force
+          Write-Output "smoke test OK: scan engine works in the bundle"
 
-      - name: Smoke test (Linux, under xvfb)
+      - name: Smoke test (Linux — headless selftest)
         if: runner.os == 'Linux'
         shell: bash
         run: |
-          timeout 12 xvfb-run -a ./dist/D2RCompanion/D2RCompanion --image d2screenshot.png
+          ./dist/D2RCompanion/D2RCompanion --selftest d2screenshot.png
           rc=$?
-          if [ "$rc" = "124" ]; then
-            echo "smoke test OK: GUI alive until timeout"
-          else
-            echo "smoke test FAILED: exited with $rc"
+          if [ "$rc" != "0" ]; then
+            echo "smoke test FAILED: selftest exited with $rc"
             exit 1
           fi
+          echo "smoke test OK: scan engine works in the bundle"
 
       - name: Package (Windows zip)
         if: runner.os == 'Windows'

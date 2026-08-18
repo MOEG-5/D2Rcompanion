@@ -707,7 +707,19 @@ class App:
 def main():
     ap = argparse.ArgumentParser(description="D2R Companion — runeword finder")
     ap.add_argument("--image", metavar="FILE", help="pre-load a screenshot")
+    ap.add_argument("--selftest", metavar="FILE",
+                    help="analyze FILE, print a summary and exit — CI smoke "
+                         "test, no window needed")
     args = ap.parse_args()
+    if args.selftest:
+        # headless self-test: exercises numpy/Pillow/tkinter imports and the
+        # whole scan engine without needing a display (used by CI)
+        cfg = core.load_config()
+        res = core.analyze_image(args.selftest, cfg)
+        n = len([c for c in core.match_runewords(res["owned"]) if c[6] > 0])
+        print(f"D2R Companion selftest OK: {len(res['owned'])} runes, "
+              f"{n} craftable runewords")
+        return
     root = tk.Tk()
     App(root, preload_image=args.image)
     root.mainloop()
