@@ -27,9 +27,11 @@ The hotkey comes from the config file (~/.config/d2r_runewords/config.json,
 
 Setup / requirements
 --------------------
-  * Linux (X11): python3, PIL, numpy, python-xlib, ImageMagick's `import`,
-    notify-send.  Windows: plain Python + PIL + numpy — screen capture uses
-    PIL ImageGrab and the global hotkey uses RegisterHotKey (ctypes), so no
+  * Linux (X11): python3, PIL, numpy, python-xlib.  Screen capture uses PIL
+    ImageGrab (self-contained); ImageMagick's `import` is only an optional
+    fallback and `notify-send` is optional (notifications degrade to
+    printing).  Windows: plain Python + PIL + numpy — capture uses PIL
+    ImageGrab and the global hotkey uses RegisterHotKey (ctypes), so no
     extra packages are needed.
   * Play Diablo 2: Resurrected in fullscreen (or borderless windowed) at the
     same resolution as the screenshot used to calibrate (1920x1080 by
@@ -130,12 +132,22 @@ def parse_digit_templates():
 # Screen capture
 # --------------------------------------------------------------------------
 def capture_screen(cfg):
-    """Grab the screen — PIL ImageGrab on Windows, `import` on X11."""
+    """Grab the screen — PIL ImageGrab on Windows and X11.
+
+    Self-contained (no external tools needed).  Falls back to ImageMagick's
+    `import` on X11 setups where Pillow lacks XCB support (source installs).
+    """
     out = tempfile.mktemp(suffix=".png", prefix="d2r_cap_")
-    if sys.platform.startswith("win"):
+    try:
         from PIL import ImageGrab
-        ImageGrab.grab().save(out)
+        if sys.platform.startswith("win"):
+            ImageGrab.grab().save(out)
+        else:
+            ImageGrab.grab(xdisplay=os.environ.get("DISPLAY", ":0.0")).save(out)
         return out
+    except Exception as e:
+        if sys.platform.startswith("win"):
+            raise RuntimeError("screen capture failed: " + str(e)) from e
     r = subprocess.run(["import", "-window", "root", out],
                        capture_output=True, text=True)
     if r.returncode != 0 or not os.path.exists(out):
@@ -395,7 +407,11 @@ def fmt_result(res, cfg, show_near=True):
 # Hotkey listener — XGrabKey on X11, RegisterHotKey on Windows
 # --------------------------------------------------------------------------
 def _notify(title, text, critical=False):
-    """Desktop notification: notify-send on Linux, a beep on Windows."""
+    """Desktop notification: notify-send on Linux, a beep on Windows.
+
+    Never raises — missing notification tools (e.g. no notify-send on a
+    minimal install) are ignored; callers still print the result.
+    """
     if sys.platform.startswith("win"):
         try:
             import ctypes
@@ -403,8 +419,11 @@ def _notify(title, text, critical=False):
         except Exception:
             pass
         return
-    args = ["notify-send"] + (["-u", "critical"] if critical else ["-t", "8000"])
-    subprocess.run(args + [title, text], capture_output=True)
+    try:
+        args = ["notify-send"] + (["-u", "critical"] if critical else ["-t", "8000"])
+        subprocess.run(args + [title, text], capture_output=True)
+    except Exception:
+        pass
 
 
 # Windows virtual-key codes for the keysyms the GUI accepts as hotkeys.

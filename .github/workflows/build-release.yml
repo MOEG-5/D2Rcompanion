@@ -1,0 +1,134 @@
+# Builds the Windows and Linux releases of D2R Companion with PyInstaller.
+#
+# PyInstaller cannot cross-compile, so each platform is built on its own
+# runner OS (one job per platform via a build matrix):
+#   - windows-latest: D2RCompanion-windows.zip  (one-folder, all bundled)
+#   - ubuntu-22.04:   D2RCompanion-linux.zip    (oldest available runner
+#                     glibc, so the binary runs on Ubuntu 22.04+, Fedora,
+#                     Arch, ... — everything self-contained incl. the X11
+#                     hotkey; no ImageMagick/notify-send needed)
+#
+# Triggers:
+#   - tag push (v*)          -> both zips attached to a GitHub Release
+#   - workflow_dispatch      -> both zips available as workflow artifacts
+#     (handy for testing a build before tagging)
+
+name: build-release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            artifact: D2RCompanion-windows.zip
+          - os: ubuntu-22.04
+            artifact: D2RCompanion-linux.zip
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # Windows: setup-python provides a self-contained Python 3.12 (tkinter
+      # included).
+      - uses: actions/setup-python@v5
+        if: runner.os == 'Windows'
+        with:
+          python-version: '3.12'
+
+      # Linux: use the system python in a venv — tkinter comes from the distro
+      # package (python3-tk). libxcb1 is needed by Pillow's X11 ImageGrab.
+      - name: Install system dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3-tk python3-venv zip xvfb libxcb1
+
+      - name: Install build dependencies (Windows)
+        if: runner.os == 'Windows'
+        # numpy pinned to 2.0.2: numpy 2.2+ imports ucrtbase.crealf, which
+        # Wine does not implement (breaks local Wine testing; harmless on
+        # real Windows, but 2.0.2 works everywhere and is crealf-free).
+        run: pip install --upgrade pyinstaller Pillow "numpy==2.0.2"
+
+      - name: Install build dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          python3 -m venv venv
+          venv/bin/pip install --upgrade pip
+          venv/bin/pip install --upgrade pyinstaller Pillow "numpy==2.0.2" python-xlib
+
+      - name: Build with PyInstaller (Windows)
+        if: runner.os == 'Windows'
+        run: pyinstaller --noconfirm --clean d2r_companion.spec
+
+      - name: Build with PyInstaller (Linux)
+        if: runner.os == 'Linux'
+        run: venv/bin/pyinstaller --noconfirm --clean d2r_companion.spec
+
+      - name: Smoke test (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $p = Start-Process -FilePath "dist\D2RCompanion\D2RCompanion.exe" -ArgumentList "--image","d2screenshot.png" -PassThru
+          Start-Sleep -Seconds 8
+          if ($p.HasExited) {
+            Write-Error "D2RCompanion.exe exited early (code $($p.ExitCode)) - startup crashed"
+            exit 1
+          }
+          Write-Output "smoke test OK: process alive after 8s"
+          Stop-Process -Id $p.Id -Force
+
+      - name: Smoke test (Linux, under xvfb)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          timeout 12 xvfb-run -a ./dist/D2RCompanion/D2RCompanion --image d2screenshot.png
+          rc=$?
+          if [ "$rc" = "124" ]; then
+            echo "smoke test OK: GUI alive until timeout"
+          else
+            echo "smoke test FAILED: exited with $rc"
+            exit 1
+          fi
+
+      - name: Package (Windows zip)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: Compress-Archive -Path dist\D2RCompanion -DestinationPath ${{ matrix.artifact }}
+
+      - name: Package (Linux zip)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: (cd dist && zip -qr ../${{ matrix.artifact }} D2RCompanion)
+
+      - name: Upload artifact (every build)
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: ${{ matrix.artifact }}
+
+  # Tag builds only: collect both zips and attach them to the Release.
+  release:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Collect zips from both builds
+        uses: actions/download-artifact@v4
+        with:
+          path: release-files
+          merge-multiple: true
+      - name: Attach to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release-files/*.zip
+          generate_release_notes: true

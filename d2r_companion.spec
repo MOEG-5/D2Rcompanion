@@ -1,11 +1,25 @@
 # -*- mode: python ; coding: utf-8 -*-
-# PyInstaller spec for D2R Companion (Windows one-folder build).
-# Used by .github/workflows/build-windows.yml; not intended for local use
-# (PyInstaller must run on the target OS, i.e. Windows).
+# PyInstaller spec for D2R Companion (Windows + Linux one-folder builds).
+# Used by .github/workflows/build-release.yml; not intended for local use
+# (PyInstaller must run on the target OS, i.e. Windows or Linux).
 #
-# Result: dist/D2RCompanion/D2RCompanion.exe  (zip up the folder to ship)
+# Result: dist/D2RCompanion/D2RCompanion(.exe)  (zip up the folder to ship)
+
+import sys
 
 block_cipher = None
+
+# platform-specific excludes: Xlib is the Linux hotkey backend, dead on Windows
+excludes = [
+    'scipy',      # removed from the codebase; never bundle it
+    'tkinter.test',
+    'unittest',
+    'pydoc',
+    'pydoc_data',
+    'test',
+]
+if sys.platform == 'win32':
+    excludes.append('Xlib')
 
 a = Analysis(
     ['d2rc.py'],
@@ -15,15 +29,7 @@ a = Analysis(
     hiddenimports=[],
     hookspath=[],
     runtime_hooks=[],
-    excludes=[
-        'scipy',      # removed from the codebase; never bundle it
-        'Xlib',       # Linux-only hotkey backend, dead on Windows
-        'tkinter.test',
-        'unittest',
-        'pydoc',
-        'pydoc_data',
-        'test',
-    ],
+    excludes=excludes,
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
     cipher=block_cipher,
