@@ -26,7 +26,10 @@ jobs:
           python-version: '3.12'
 
       - name: Install build dependencies
-        run: pip install --upgrade pyinstaller Pillow numpy
+        # numpy pinned to 2.0.2: numpy 2.2+ imports ucrtbase.crealf, which
+        # Wine does not implement (breaks local Wine testing; harmless on
+        # real Windows, but 2.0.2 works everywhere and is crealf-free).
+        run: pip install --upgrade pyinstaller Pillow "numpy==2.0.2"
 
       - name: Build with PyInstaller
         run: pyinstaller --noconfirm --clean d2r_companion.spec
