@@ -97,10 +97,15 @@ def _setup_style():
                     tabmargins=(0, 0, 0, 0))
     style.configure("TNotebook.Tab", background=BG2, foreground=DIM,
                     padding=(22, 9), borderwidth=0, focuscolor=BG)
+    # NOTE: no "expand" on select, and clam's own padding map is overridden
+    # (it adds 2px top padding on "selected") — tabs must keep a constant
+    # size; the colour change alone signals the active tab.
     style.map("TNotebook.Tab",
               background=[("selected", PANEL), ("active", PANEL)],
               foreground=[("selected", GOLD), ("active", FG)],
-              expand=[("selected", (1, 1, 1, 0))])
+              lightcolor=[("selected", BG2), ("active", BG2)],
+              darkcolor=[("selected", BG2), ("active", BG2)],
+              padding=[("selected", (22, 9)), ("active", (22, 9))])
 
     # buttons — flat, dark
     style.configure("TButton", background=PANEL, foreground=FG,
@@ -345,6 +350,13 @@ class App:
         ing = " + ".join(f"{q} {n}" for q, n in ingredients)
         out = " → " + " + ".join(f"{q} {n}" for q, n in output)
         seg.append((f"     {ing}{out}\n", "eff"))
+        rolls = d2r_data.CRAFT_ROLLS.get(title)
+        if rolls:
+            seg.append(("     Always rolls:\n", "dim"))
+            for line in rolls:
+                seg.append((f"       {line}\n", "eff"))
+            seg.append(("     Plus 1-4 random affixes (magic/rare pool — "
+                        "more at higher item level)\n", "dim"))
         seg.append(("\n", None))
 
     # ------------------------------------------------------------------
@@ -439,7 +451,8 @@ class App:
     def _rec_matches(rec, q):
         title, cat, ingredients, output = rec
         hay = " ".join([title, cat] + [n for _, n in ingredients]
-                       + [n for _, n in output])
+                       + [n for _, n in output]
+                       + list(d2r_data.CRAFT_ROLLS.get(title, [])))
         return q in hay.lower()
 
     # ------------------------------------------------------------------

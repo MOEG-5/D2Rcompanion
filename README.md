@@ -12,21 +12,21 @@ recipes.
 ## Download
 
 **Windows:** grab the latest **D2RCompanion-windows.zip** from
-[Releases](https://github.com/MOEG-5/D2Rcompanion/releases) — no Python
-needed, everything (Python, tkinter, numpy, Pillow) is bundled in one folder.
-Unzip and double-click `D2RCompanion.exe`.
+[Releases](https://github.com/MOEG-5/D2Rcompanion/releases), unzip and
+double-click `D2RCompanion.exe`.
+
+**Linux:** grab **D2RCompanion-linux.zip**, unzip and run
+`D2RCompanion/D2RCompanion`. Built on Ubuntu 22.04, so it runs on most
+modern distros (Ubuntu 22.04+, Fedora, Arch, …) with an X11 session.
+
+Both zips are fully self-contained — no Python installation or other
+dependencies required.
 
 > **Windows SmartScreen warning:** the build is not code-signed (a certificate
 > costs a few hundred $/year), so Windows may show *"Windows protected your
 > PC"*. That is the normal state for free open-source software — click
 > **More info → Run anyway**. Always download from this repository's Releases
 > page.
-
-**Linux:** grab **D2RCompanion-linux.zip** — equally self-contained (Python,
-tkinter, numpy, Pillow and the X11 hotkey all bundled; no ImageMagick or
-notify-send needed). Unzip and run `D2RCompanion/D2RCompanion` (or
-double-click it). Built on Ubuntu 22.04, so it runs on most modern distros
-(Ubuntu 22.04+, Fedora, Arch, …) with an X11 session.
 
 On both platforms the app works the same: assign a hotkey, open the RUNES
 tab in D2R, press the hotkey. Settings are stored in
@@ -42,9 +42,11 @@ tab in D2R, press the hotkey. Settings are stored in
   additions) sorted by required level.
 - **Cube recipes** — 159 Horadric cube recipes grouped by category
   (Socketing, Crafting, Rune/Gem upgrading, Item upgrading, Repair &
-  recharge, Rerolling, Quest & special).
+  recharge, Rerolling, Quest & special). All 36 crafting recipes list the
+  properties they **always roll** (e.g. Crushing Blow on Blood Gloves) plus
+  the random-affix behaviour.
 - **Live search** — filters the active tab as you type; partial words match
-  names, runes, item types, effect text and recipe ingredients.
+  names, runes, item types, effect text, recipe ingredients and craft rolls.
 - **Global hotkey** — press a key once and it's your scan key forever
   (remembered across runs). Press it in-game to re-scan instantly.
 - **CLI** — the same scanning engine without the GUI.
@@ -89,10 +91,9 @@ GUI, or add `"hotkey": "F8"` to `~/.config/d2r_runewords/config.json`).
 The D2R **RUNES** stash tab renders all 33 runes in a fixed 9×4 grid. Runes
 you own show as light stone slabs with a white count digit; runes you don't
 own show as dark placeholder silhouettes. The tool screenshots the screen
-with Pillow's ImageGrab (fully self-contained — no external tools) and
-checks the brightness of each of the 33 slots — bright slot = rune present.
-Stack sizes are read from the count digit via embedded templates (best
-effort; presence detection is the reliable part).
+and checks the brightness of each of the 33 slots — bright slot = rune
+present. Stack sizes are read from the count digit via embedded templates
+(best effort; presence detection is the reliable part).
 
 ## Files
 
@@ -109,13 +110,8 @@ d2screenshot.png      calibration screenshot (slot layout)
 
 ## Requirements
 
-- **Linux (X11):** nothing for end users — the release zip is fully
-  self-contained. Running from source needs Python 3, Pillow, numpy and
-  python-xlib (screen capture uses PIL ImageGrab; ImageMagick's `import` is
-  only an optional fallback and `notify-send` is optional).
-- **Windows:** none for end users — the released exe bundles everything.
-  Building from source needs Python 3 + Pillow + numpy (screen capture uses
-  PIL ImageGrab, the global hotkey uses RegisterHotKey via ctypes).
+Running from source needs Python 3 with Pillow, numpy and python-xlib.
+
 - The game should run fullscreen (or borderless) on one monitor at the
   resolution used for calibration (1920×1080) — the layout auto-scales, and
   windowed/multi-monitor setups can be tuned via
@@ -123,27 +119,18 @@ d2screenshot.png      calibration screenshot (slot layout)
 - Exclusive-fullscreen games sometimes render to an overlay the OS cannot
   capture (black image) — switch D2R to Windowed / Borderless Windowed.
 
-## Building the release builds
-
-Windows and Linux builds are produced by
-[GitHub Actions](.github/workflows/build-release.yml) — PyInstaller can only
-build for the OS it runs on (no cross-compiling), so the action runs one job
-per platform (`windows-latest` and `ubuntu-22.04`; the Ubuntu 22.04 glibc is
-the oldest available runner, so the Linux binary runs on Ubuntu 22.04+,
-Fedora, Arch, …):
-
-1. Push a tag — `git tag v0.1.2 && git push origin v0.1.2`. The action builds
-   both zips and attaches them to a Release automatically.
-2. No tag yet? Run the workflow manually (Actions → **build-release** → *Run
-   workflow*) — both zips are then available as workflow artifacts, handy
-   for testing a build before tagging.
+Release builds are produced automatically by
+[GitHub Actions](.github/workflows/build-release.yml): push a tag
+(`git tag v0.1.3 && git push origin v0.1.3`) and both platform zips are
+built and attached to a GitHub Release.
 
 ## Data source
 
 Runeword + recipe data parsed from [diablo2.io](https://diablo2.io)
 (D2R v3.2 / Reign of the Warlock, incl. Authority, Coven, Void, Vigilance,
-Ritual, Hysteria, Mania). Slot layout and thresholds were calibrated from
-`d2screenshot.png`.
+Ritual, Hysteria, Mania). Craft-roll data from
+[maxroll.gg](https://maxroll.gg/d2/items/crafted-items). Slot layout and
+thresholds were calibrated from `d2screenshot.png`.
 
 ## License
 
