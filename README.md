@@ -128,7 +128,7 @@ Running from source needs Python 3 with Pillow, numpy and python-xlib.
 
 Release builds are produced automatically by
 [GitHub Actions](.github/workflows/build-release.yml): push a tag
-(`git tag v0.1.3 && git push origin v0.1.3`) and both platform zips are
+(`git tag v0.1.4 && git push origin v0.1.4`) and both platform zips are
 built and attached to a GitHub Release.
 
 ## Data source
