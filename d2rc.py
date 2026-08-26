@@ -11,6 +11,10 @@ Tkinter companion app for Diablo 2: Resurrected.  Reads the rune stash
   * Tab 2 "All runewords"  — complete list sorted by required level.
   * Tab 3 "Cube recipes"   — Horadric cube recipes (socketing, crafting,
                              rune & gem upgrades, rerolling, ...).
+  * Tab 4 "Unique items"   — every unique item with full stats, grouped by
+                             item category.
+  * Tab 5 "Set items"      — every set with its pieces/stats plus the
+                             partial and complete set bonuses.
 
 A search box at the top filters the ACTIVE tab live (partial words match
 names, runes, item types, effect text, recipe ingredients, ...).
@@ -40,6 +44,7 @@ import tkinter as tk
 from tkinter import ttk, font as tkfont
 
 import d2r_data
+import d2r_items
 import d2r_runewords as core
 
 # --------------------------------------------------------------------------
@@ -55,6 +60,8 @@ DIM     = "#8a8a93"   # muted text
 GOLD    = "#d4af37"
 NAME    = "#e8c86a"
 RUNEC   = "#7ec8ff"
+BASEC   = "#9fd0a0"
+SKILLC  = "#d0a0e8"
 MISS    = "#ff6b6b"
 SEC     = "#ffffff"
 EFF     = "#c9c9c9"
@@ -230,9 +237,13 @@ class App:
         self.tab_mine = ttk.Frame(self.nb)
         self.tab_all  = ttk.Frame(self.nb)
         self.tab_cube = ttk.Frame(self.nb)
+        self.tab_uni  = ttk.Frame(self.nb)
+        self.tab_set  = ttk.Frame(self.nb)
         self.nb.add(self.tab_mine, text="  My runes  ")
         self.nb.add(self.tab_all,  text="  All runewords  ")
         self.nb.add(self.tab_cube, text="  Cube recipes  ")
+        self.nb.add(self.tab_uni,  text="  Unique items  ")
+        self.nb.add(self.tab_set,  text="  Set items  ")
         self.nb.bind("<<NotebookTabChanged>>", lambda e: self.refresh())
 
         # footer status bar
@@ -247,7 +258,17 @@ class App:
         self.txt_mine = self._make_text(self.tab_mine)
         self.txt_all  = self._make_text(self.tab_all)
         self.txt_cube = self._make_text(self.tab_cube)
+        self.txt_uni  = self._make_text(self.tab_uni)
+        self.txt_set  = self._make_text(self.tab_set)
         self._tag_configure_all()
+
+        # stats bar for the item tabs
+        self.n_uni = len(d2r_items.UNIQUES)
+        self.n_set = len(d2r_items.SETS)
+        n_set_items = sum(len(s['items']) for s in d2r_items.SETS)
+        self._set_status(
+            f"Loaded {self.n_uni} unique items and {self.n_set} sets "
+            f"({n_set_items} set items) - Reign of the Warlock (D2R v3.x).")
 
     def _make_text(self, parent):
         wrap = tk.Frame(parent, bg=BG)
@@ -263,9 +284,12 @@ class App:
         return txt
 
     def _tag_configure_all(self):
-        for txt in (self.txt_mine, self.txt_all, self.txt_cube):
+        for txt in (self.txt_mine, self.txt_all, self.txt_cube,
+                    self.txt_uni, self.txt_set):
             txt.tag_configure("name",  font=self.f_name, foreground=NAME)
             txt.tag_configure("runes", font=self.f_bold, foreground=RUNEC)
+            txt.tag_configure("base",  font=self.f_bold, foreground=BASEC)
+            txt.tag_configure("skill", font=self.f_bold, foreground=SKILLC)
             txt.tag_configure("miss",  font=self.f_bold, foreground=MISS)
             txt.tag_configure("sec",   font=self.f_sec,  foreground=SEC)
             txt.tag_configure("dim",   font=self.f_small, foreground=DIM)
@@ -440,6 +464,86 @@ class App:
             for rec in group:
                 self._rec_card(seg, rec)
 
+    # ------------------------------------------------------------------
+    # unique / set items
+    # ------------------------------------------------------------------
+    def _item_card(self, seg, it, prefix="     "):
+        name, category, base, quality, small, mods, patch = it
+        meta = " ".join(x for x in (base, quality, patch) if x)
+        seg.append((prefix + "✧ ", "name"))
+        seg.append((name, "name"))
+        seg.append((f"   [{meta}]\n", "dim"))
+        if small:
+            for line in small:
+                seg.append((f"{prefix}  {line}\n", "eff"))
+        for line in mods:
+            seg.append((f"{prefix}  {line}\n", "skill"))
+        seg.append(("\n", None))
+
+    def _set_card(self, seg, s):
+        name = s['name']
+        modline = " ".join(x for x in (name, s['patch']) if x)
+        seg.append(("  ✧ ", "name"))
+        seg.append((name, "name"))
+        seg.append((f"   [{s['patch']}]" if s['patch'] else "", "dim"))
+        seg.append((f"   {len(s['items'])} pieces\n", "dim"))
+        for it in s['items']:
+            seg.append((f"     • {it[0]}  ", "runes"))
+            seg.append((f"[{it[1]}]\n", "base"))
+            for line in it[3]:
+                seg.append((f"         {line}\n", "eff"))
+        if s['partial']:
+            seg.append(("     Partial set bonus:\n", "ok"))
+            for count, mods in s['partial']:
+                seg.append((f"     ({count} items)\n", "base"))
+                for m in mods:
+                    seg.append((f"       {m}\n", "eff"))
+        if s['full']:
+            seg.append(("     Complete set bonus:\n", "ok"))
+            for m in s['full']:
+                seg.append((f"       {m}\n", "eff"))
+        seg.append(("\n", None))
+
+    def _view_uniques(self, seg, q):
+        items = d2r_items.UNIQUES
+        if q:
+            items = [i for i in items if self._item_matches(i, q)]
+        if not items:
+            seg.append(("  (nothing matches)\n", "dim"))
+            return
+        last = None
+        for it in items:
+            if it[1] != last:
+                seg.append((f"── {it[1].upper()} ──\n", "sec"))
+                last = it[1]
+            self._item_card(seg, it)
+
+    def _view_sets(self, seg, q):
+        sets = d2r_items.SETS
+        if q:
+            sets = [s for s in sets if self._set_matches(s, q)]
+        if not sets:
+            seg.append(("  (nothing matches)\n", "dim"))
+            return
+        for s in sets:
+            self._set_card(seg, s)
+
+    @staticmethod
+    def _item_matches(it, q):
+        name, cat, base, qual, small, mods, patch = it
+        hay = " ".join([name, cat, base, qual, patch] + small + mods)
+        return q in hay.lower()
+
+    @staticmethod
+    def _set_matches(s, q):
+        hay = " ".join([s['name'], s['patch']])
+        for it in s['items']:
+            hay += " " + " ".join([it[0], it[1]] + it[2] + it[3])
+        for _c, mods in s['partial']:
+            hay += " " + " ".join(mods)
+        hay += " " + " ".join(s['full'])
+        return q in hay.lower()
+
     @staticmethod
     def _rw_matches(rw, q):
         name, runes, socks, types, req, patch, mods = rw
@@ -474,10 +578,18 @@ class App:
             seg = []
             self._view_all(seg, q)
             self._set_text(self.txt_all, seg)
-        else:
+        elif tab == 2:
             seg = []
             self._view_cube(seg, q)
             self._set_text(self.txt_cube, seg)
+        elif tab == 3:
+            seg = []
+            self._view_uniques(seg, q)
+            self._set_text(self.txt_uni, seg)
+        else:
+            seg = []
+            self._view_sets(seg, q)
+            self._set_text(self.txt_set, seg)
 
     # ------------------------------------------------------------------
     # scanning

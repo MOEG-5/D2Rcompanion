@@ -45,6 +45,11 @@ tab in D2R, press the hotkey. Settings are stored in
   recharge, Rerolling, Quest & special). All 36 crafting recipes list the
   properties they **always roll** (e.g. Crushing Blow on Blood Gloves) plus
   the random-affix behaviour.
+- **Unique items** — every unique item (415) grouped by item category, with
+  full stats (damage/defense, requirements, and the complete mod list).
+- **Set items** — every set (34) with all member pieces and their stats,
+  plus the **partial set bonus** list (per item-count threshold) and the
+  **complete set bonus** for the full set.
 - **Live search** — filters the active tab as you type; partial words match
   names, runes, item types, effect text, recipe ingredients and craft rolls.
 - **Global hotkey** — press a key once and it's your scan key forever
@@ -101,6 +106,8 @@ present. Stack sizes are read from the count digit via embedded templates
 d2rc.py               GUI (main entry — python3 d2rc.py)
 d2r_runewords.py      CLI + scanning core + hotkey grab (X11 + Windows)
 d2r_data.py           runeword + cube recipe database (single source of truth)
+d2r_items.py          all unique + set items with stats and set bonuses
+                       (scraped from diablo2.io, incl. Reign of the Warlock)
 d2r_companion.spec    PyInstaller spec — Windows + Linux builds (used by CI)
 d2r.ico               app icon (Windows exe + taskbar)
 version_info.txt      Windows exe version resource
@@ -128,7 +135,9 @@ built and attached to a GitHub Release.
 
 Runeword + recipe data parsed from [diablo2.io](https://diablo2.io)
 (D2R v3.2 / Reign of the Warlock, incl. Authority, Coven, Void, Vigilance,
-Ritual, Hysteria, Mania). Craft-roll data from
+Ritual, Hysteria, Mania). Unique and set items (stats + partial/complete set bonuses) also from
+diablo2.io, covering every item up to the latest D2R patch (Reign of the
+Warlock, including the new Grimoires). Craft-roll data from
 [maxroll.gg](https://maxroll.gg/d2/items/crafted-items). Slot layout and
 thresholds were calibrated from `d2screenshot.png`.
 
