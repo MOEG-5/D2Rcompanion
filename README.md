@@ -75,7 +75,7 @@ python3 d2rc.py
 Pre-load a screenshot instead of scanning (useful for testing):
 
 ```bash
-python3 d2rc.py --image screenshot.png
+python3 d2rc.py --image d2screenshot.png
 ```
 
 ## CLI
@@ -93,7 +93,7 @@ GUI, or add `"hotkey": "F8"` to `~/.config/d2r_runewords/config.json`).
 
 ## How it works
 
-The D2R **RUNES** stash tab renders all 33 runes in a fixed 9×4 grid. Runes
+The D2R **RUNES** stash tab renders all 33 runes in a fixed five-row layout. Runes
 you own show as light stone slabs with a white count digit; runes you don't
 own show as dark placeholder silhouettes. The tool screenshots the screen
 and checks the brightness of each of the 33 slots — bright slot = rune
@@ -128,7 +128,7 @@ Running from source needs Python 3 with Pillow, numpy and python-xlib.
 
 Release builds are produced automatically by
 [GitHub Actions](.github/workflows/build-release.yml): push a tag
-(`git tag v0.1.4 && git push origin v0.1.4`) and both platform zips are
+(`git tag v0.1.6 && git push origin v0.1.6`) and both platform zips are
 built and attached to a GitHub Release.
 
 ## Data source

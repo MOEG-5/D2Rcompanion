@@ -9,7 +9,7 @@ types).
 
 How it works
 ------------
-The D2R runes tab renders the 33 runes in a fixed 9x4 grid.  Runes you own
+The D2R runes tab renders the 33 runes in a fixed five-row layout.  Runes you own
 are rendered as light stone slabs (with a white count digit), runes you do
 not own are dark placeholder silhouettes.  The tool screenshots the screen
 and samples each of the 33 slots; bright slots = rune present.
@@ -68,6 +68,7 @@ except ImportError:
 # --------------------------------------------------------------------------
 # Layout (calibrated on a 1920x1080 fullscreen screenshot).
 # Cell (r, c) is a 46x45 px square at origin + (c*spacing, r*spacing).
+# The first three rows are full; the last two wrap around the stash panel.
 # --------------------------------------------------------------------------
 DEFAULT_CFG = {
     "baseline_w": 1920,
@@ -78,24 +79,36 @@ DEFAULT_CFG = {
     "cell_w": 46,
     "cell_h": 45,
     "cols": 9,
-    "rows": 4,
+    "rows": 5,
     "offset_x": 0,   # extra manual offset (multi-monitor / windowed play)
     "offset_y": 0,
     "bright_threshold": 120,     # pixel brightness considered "bright"
-    "digit_threshold": 140,       # brighter threshold to isolate the count digit
+    "digit_threshold": 180,       # brighter threshold to isolate the count digit
     "min_present_delta": 12,     # min gap between present/absent cluster means
     "digit_accept": 0.80,        # min IoU to accept a detected count digit
     "result_file": os.path.expanduser("~/d2r_runewords_result.txt"),
     "hotkey": "",                # global scan hotkey (assigned via the GUI)
 }
 
-# Quantity digit reference grids (14x10), learned from the calibration screenshot.
-# '#' = digit stroke.  Used to read stack sizes (1/2/3 recognized; anything
-# else or a weak match falls back to 1).  Counts are a best-effort extra.
+SLOT_COORDS = (
+    [(r, c) for r in range(3) for c in range(9)]
+    + [(3, c) for c in (0, 1, 7, 8)]
+    + [(4, c) for c in (0, 8)]
+)
+
+# Quantity digit reference grids (14x10), learned from the calibration screenshots.
+# '#' = digit stroke. Weak matches still fall back to 1.
 DIGIT_TEMPLATES = {
-    1: ["#........#|#........#|#........#|..........|#........#|#........#|..........|#........#|#........#|..........|#.........|#.........|..........|#........#"],
-    2: ["...#......|..........|..........|..........|..........|..........|.#.#......|..........|..........|..........|..........|..........|..........|##.#.#.#.#"],
-    3: [".....#....|..........|...#.#.#..|..........|.......#.#|..........|.........#|..........|.........#|..........|##.....#.#|..........|..........|.#.#.#.#.."],
+    0: "....##....|..##..##..|.#.....##.|..........|.#....#..#|#....#...#|..........|#...#....#|#..#.....#|..........|.##.....#.|.##....##.|..........|...####...",
+    1: "#........#|#.........|#.........|..........|#.........|#.........|..........|#.........|#.........|..........|#.........|#.........|..........|#........#",
+    2: "...#.#....|.#.....#..|#........#|..........|#........#|.........#|..........|.......#..|.....#....|..........|...#......|.#........|..........|##.#.#.#.#",
+    3: ".#.#.#.#.#|.......#..|.......#..|..........|.....#....|...#.#.#..|..........|.......#.#|.........#|..........|.........#|##.......#|..........|.#.#.#.#..",
+    4: ".......#..|......##..|..........|....#.##..|....#..#..|..........|...#...#..|..........|.#....##..|##.##.##.#|..........|.......#..|..........|.......#..",
+    5: ".#.#.#.#..|.#........|.#........|..........|.#........|.#.#.#.#..|..........|.......#.#|.........#|..........|.........#|##.....#.#|..........|.#.#.#.#..",
+    6: ".....#.#..|.....#....|...#......|..........|...#......|.#.#.#....|..........|.#.....#..|#........#|..........|#........#|##.......#|..........|.#.#.#.#..",
+    7: "##.#.#.#.#|.........#|.........#|..........|.......#..|.......#..|..........|.....#....|.....#....|..........|.....#....|...#......|..........|...#......",
+    8: "...#.#.#..|.#.....#..|.#........|..........|.#.#.#.#..|.#.#.#.#..|..........|.#.......#|#........#|..........|#........#|.#.......#|..........|.#.#.#.#..",
+    9: "...#.#....|.#.....#..|#........#|..........|#........#|.#.....#.#|..........|...#.#.#..|.....#....|..........|.....#....|...#......|..........|...#......",
 }
 
 
@@ -123,7 +136,7 @@ def parse_digit_templates():
     out = {}
     for k, rows in DIGIT_TEMPLATES.items():
         g = np.array([[1.0 if ch == "#" else 0.0 for ch in row]
-                      for row in rows[0].split("|")])
+                      for row in rows.split("|")])
         out[k] = g
     return out
 
@@ -204,98 +217,49 @@ def otsu(values):
     return th, lo_mean, hi_mean
 
 
-def _label_components(binary):
-    """4-connected component labeling — scipy.ndimage.label drop-in.
-
-    Two-pass union-find over a small binary patch (<= ~20x20 px), so the
-    plain-Python loop is effectively free.  Keeps the scanner free of scipy
-    (~150 MB when bundled into a frozen build).
-    """
-    H, W = binary.shape
-    lab = np.zeros((H, W), dtype=np.int32)
-    parent = [0]                        # 1-based provisional label -> root
-    n = 0
-
-    def find(i):
-        while parent[i] != i:
-            parent[i] = parent[parent[i]]
-            i = parent[i]
-        return i
-
-    def union(a, b):
-        ra, rb = find(a), find(b)
-        if ra != rb:
-            parent[rb] = ra
-
-    for y in range(H):
-        for x in range(W):
-            if not binary[y, x]:
-                continue
-            left = lab[y, x - 1] if x > 0 else 0
-            up = lab[y - 1, x] if y > 0 else 0
-            if left and up:
-                if left != up:
-                    union(left, up)
-                lab[y, x] = left
-            elif left:
-                lab[y, x] = left
-            elif up:
-                lab[y, x] = up
-            else:
-                n += 1
-                parent.append(n)
-                lab[y, x] = n
-
-    # second pass: collapse every pixel to its root, renumber 1..k
-    roots = {}
-    k = 0
-    for y in range(H):
-        for x in range(W):
-            if lab[y, x]:
-                r = find(lab[y, x])
-                if r not in roots:
-                    k += 1
-                    roots[r] = k
-                lab[y, x] = roots[r]
-    return lab, k
-
-
 def read_digit_count(gray, cfg, scale, stats, templates):
-    """Best-effort stack count from the white digit in the slot's corner."""
+    """Best-effort stack count from one or two white digits in the slot."""
     x0, y0 = stats["x0"], stats["y0"]
     sx, sy = scale
-    # digit lives in the bottom-right corner of the slot (calibrated margins)
-    r0 = int(round(y0 + 28 * sy))
-    r1 = int(round(y0 + 46 * sy))
-    c0 = int(round(x0 + 30 * sx))
-    c1 = int(round(x0 + 47 * sx))
+    # Include enough of the bottom-right corner for two-digit stack counts.
+    r0 = int(round(y0 + 30 * sy))
+    r1 = int(round(y0 + 44 * sy))
+    c0 = int(round(x0 + 25 * sx))
+    c1 = int(round(x0 + 46 * sx))
     reg = gray[r0:r1, c0:c1]
     if reg.size == 0:
         return 1
-    binary = reg > cfg["digit_threshold"]
-    lab, n = _label_components(binary)
-    if n == 0:
-        return 1
-    sizes = np.bincount(lab.ravel())
-    sizes[0] = 0                        # ignore the background class
-    best = int(np.argmax(sizes))
-    ys, xs = np.where(lab == best)
-    H, W = 14, 10
-    canvas = np.zeros((H, W), dtype=float)
-    h_rng = max(ys.max() - ys.min(), 1)
-    w_rng = max(xs.max() - xs.min(), 1)
-    ry = ((ys - ys.min()) / h_rng * (H - 1)).astype(int)
-    rx = ((xs - xs.min()) / w_rng * (W - 1)).astype(int)
-    canvas[ry, rx] = 1
-    best_k, best_iou = None, -1.0
-    for k, t in templates.items():
-        inter = (canvas * t).sum()
-        iou = inter / max(canvas.sum() + t.sum() - inter, 1)
-        if iou > best_iou:
-            best_iou, best_k = iou, k
-    if best_iou >= cfg["digit_accept"]:
-        return int(best_k)
-    return 1
+    binary = reg > max(cfg["digit_threshold"], 180)
+
+    # Each digit is a run of occupied columns; the gap between digits stays
+    # empty even though some glyphs consist of disconnected strokes.
+    runs = []
+    for x in np.flatnonzero(binary.any(axis=0)):
+        if not runs or x > runs[-1][-1] + 1:
+            runs.append([x])
+        else:
+            runs[-1].append(x)
+
+    digits = []
+    for run in runs:
+        glyph = binary[:, run[0]:run[-1] + 1]
+        ys, xs = np.where(glyph)
+        if (len(xs) < max(4, 8 * sx * sy)
+                or ys.max() - ys.min() < max(4, 8 * sy)):
+            continue
+        canvas = np.zeros((14, 10), dtype=float)
+        ry = ((ys - ys.min()) / max(ys.max() - ys.min(), 1) * 13).astype(int)
+        rx = ((xs - xs.min()) / max(xs.max() - xs.min(), 1) * 9).astype(int)
+        canvas[ry, rx] = 1
+        scores = {}
+        for k, template in templates.items():
+            inter = (canvas * template).sum()
+            scores[k] = inter / max(canvas.sum() + template.sum() - inter, 1)
+        digit = max(scores, key=scores.get)
+        if scores[digit] >= cfg["digit_accept"]:
+            digits.append(digit)
+
+    return int("".join(map(str, digits[-2:]))) if digits else 1
 
 
 def analyze_image(path, cfg, verbose=False):
@@ -306,17 +270,13 @@ def analyze_image(path, cfg, verbose=False):
 
     n_runes = len(RUNES)
     stats = []
-    for r in range(cfg["rows"]):
-        for c in range(cfg["cols"]):
-            idx = r * cfg["cols"] + c
-            if idx >= n_runes:
-                continue
-            st = cell_stats(gray, cfg, scale, r, c)
-            if st is None:
-                continue
-            st["rune"] = RUNES[idx]
-            st["idx"] = idx
-            stats.append(st)
+    for idx, (r, c) in enumerate(SLOT_COORDS[:n_runes]):
+        st = cell_stats(gray, cfg, scale, r, c)
+        if st is None:
+            continue
+        st["rune"] = RUNES[idx]
+        st["idx"] = idx
+        stats.append(st)
 
     means = [s["mean"] for s in stats]
     th, lo_mean, hi_mean = otsu(means)

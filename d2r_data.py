@@ -473,7 +473,7 @@ RECIPES = [
 ]
 
 
-# The 33 runes in the order the D2R runes tab shows them (row-major, 9 per row)
+# The 33 runes in the order the D2R runes tab shows them
 RUNES = [
     "El", "Eld", "Tir", "Nef", "Eth", "Ith", "Tal", "Ral", "Ort",
     "Thul", "Amn", "Sol", "Shael", "Dol", "Hel", "Io", "Lum", "Ko",

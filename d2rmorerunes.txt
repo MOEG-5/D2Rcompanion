@@ -1,0 +1,40 @@
+el 5
+eld 6
+tir 12
+nef 6
+eth 8
+ith 10
+tal 4
+ral 5
+ort 7
+thul 6
+amn 7
+sol 6
+shael 5
+dol 7
+hel 7
+io 4
+lum 0
+ko 2
+fal 1
+lem 0
+pul 3
+um 0
+mal 0
+ist 0
+gul 1
+missing higher runes.
+
+crop coordinates:
+177x240 topleft of first rune
+221x284 bottomright of first rune
+229x240 topleft of second rune
+273x284 bottomright of second rune
+637x492 bottomright of last rune
+
+rune layout:
+XXXXXXXXX
+XXXXXXXXX
+XXXXXXXXX
+XX00000XX
+X0000000X

@@ -66,6 +66,7 @@ MISS    = "#ff6b6b"
 SEC     = "#ffffff"
 EFF     = "#c9c9c9"
 OK      = "#7ddc7d"
+VERSION = "v0.1.6"
 
 CAT_COLORS = {
     "Crafting":          "#e8a06a",
@@ -252,7 +253,9 @@ class App:
         footer.pack(fill="x", padx=12, pady=(6, 10))
         self.status = tk.Label(footer, text="", font=self.f_small, fg=DIM,
                                bg=BG, anchor="w")
-        self.status.pack(fill="x")
+        tk.Label(footer, text=VERSION, font=self.f_small, fg=DIM,
+                 bg=BG).pack(side="right")
+        self.status.pack(side="left", fill="x", expand=True)
 
         # text areas
         self.txt_mine = self._make_text(self.tab_mine)
