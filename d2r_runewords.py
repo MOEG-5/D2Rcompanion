@@ -23,7 +23,8 @@ Usage
   python3 d2r_runewords.py --list        # dump the built-in runeword database
 
 The hotkey comes from the config file (~/.config/d2r_runewords/config.json,
-"hotkey" key, default F8).  The GUI (d2rc.py) lets you assign it visually.
+"hotkey" key, default F8).  Modifier combinations such as Ctrl+J and
+Ctrl+Shift+F8 are supported. The GUI (d2rc.py) lets you assign one visually.
 
 Setup / requirements
 --------------------
@@ -37,7 +38,8 @@ Setup / requirements
     same resolution as the screenshot used to calibrate (1920x1080 by
     default) — the layout scales automatically with the screen size, but the
     game window must fill the screen (or use the offsets in the config file).
-  * The stash window must be open with the RUNES tab selected when you hit F8.
+  * The stash window must be open with the RUNES tab selected when you hit the
+    configured hotkey (F8 by default).
 
 Layout / thresholds live in ~/.config/d2r_runewords/config.json
 (created automatically).  Tweak there if your setup differs.
@@ -410,6 +412,32 @@ _WIN_VK = {
 }
 
 
+def parse_hotkey(hotkey_str):
+    """
+    Parse a hotkey string like 'Ctrl+J', 'Ctrl+Shift+F8', or 'F8'.
+    Returns (mods_set, key_name)
+    where mods_set is a set containing any of {'Ctrl', 'Alt', 'Shift', 'Win'}.
+    """
+    if not hotkey_str:
+        return set(), ""
+    parts = [p.strip() for p in hotkey_str.split("+") if p.strip()]
+    if not parts:
+        return set(), ""
+    mods = set()
+    key = parts[-1]
+    for p in parts[:-1]:
+        pl = p.lower()
+        if pl in ("ctrl", "control"):
+            mods.add("Ctrl")
+        elif pl in ("alt",):
+            mods.add("Alt")
+        elif pl in ("shift",):
+            mods.add("Shift")
+        elif pl in ("win", "super"):
+            mods.add("Win")
+    return mods, key
+
+
 def win_vk(keysym):
     """Map a tkinter keysym to a Windows virtual-key code, or None."""
     if keysym in _WIN_VK:
@@ -419,20 +447,76 @@ def win_vk(keysym):
     return None
 
 
-def _listen_win(cfg, keysym):
+def hotkey_to_win(hotkey_str):
+    """
+    Map a hotkey string to Windows (fsModifiers, vk).
+    Returns (fsModifiers, vk) or (None, None) if key is unsupported.
+    """
+    mods, key = parse_hotkey(hotkey_str)
+    vk = win_vk(key)
+    if vk is None and len(key) == 1 and key.isalnum():
+        vk = ord(key.upper())
+    if vk is None:
+        return None, None
+    MOD_ALT = 0x0001
+    MOD_CONTROL = 0x0002
+    MOD_SHIFT = 0x0004
+    MOD_WIN = 0x0008
+    MOD_NOREPEAT = 0x4000
+
+    fs = MOD_NOREPEAT
+    if "Ctrl" in mods:
+        fs |= MOD_CONTROL
+    if "Alt" in mods:
+        fs |= MOD_ALT
+    if "Shift" in mods:
+        fs |= MOD_SHIFT
+    if "Win" in mods:
+        fs |= MOD_WIN
+    return fs, vk
+
+
+def hotkey_to_xlib(hotkey_str, d):
+    """
+    Map a hotkey string to Xlib (keycode, base_modmask).
+    Returns (keycode, mask) or (None, 0) if unmappable.
+    """
+    from Xlib import X, XK
+    mods, key = parse_hotkey(hotkey_str)
+    xk = XK.string_to_keysym(key)
+    if not xk:
+        xk = XK.string_to_keysym(key.lower())
+    if not xk:
+        return None, 0
+    kc = d.keysym_to_keycode(xk)
+    if not kc:
+        return None, 0
+    mask = 0
+    if "Ctrl" in mods:
+        mask |= X.ControlMask
+    if "Alt" in mods:
+        mask |= X.Mod1Mask
+    if "Shift" in mods:
+        mask |= X.ShiftMask
+    if "Win" in mods:
+        mask |= X.Mod4Mask
+    return kc, mask
+
+
+def _listen_win(cfg, hotkey_str):
     """Global hotkey on Windows: RegisterHotKey + thread message loop."""
     import ctypes
     from ctypes import wintypes
     user32 = ctypes.windll.user32
-    vk = win_vk(keysym)
+    fs, vk = hotkey_to_win(hotkey_str)
     if vk is None:
-        sys.exit(f"key {keysym} is not supported on Windows — "
-                 "pick a letter, digit, F-key or numpad key")
-    MOD_NOREPEAT, WM_HOTKEY = 0x4000, 0x0312
+        sys.exit(f"hotkey '{hotkey_str}' is not supported on Windows — "
+                 "pick a letter, digit, F-key or numpad key with optional Ctrl/Alt/Shift")
+    WM_HOTKEY = 0x0312
     hk_id = 1
-    if not user32.RegisterHotKey(None, hk_id, MOD_NOREPEAT, vk):
-        sys.exit(f"could not register {keysym} (another app owns it?)")
-    print(f"D2R companion listening — press {keysym} with the RUNES tab "
+    if not user32.RegisterHotKey(None, hk_id, fs, vk):
+        sys.exit(f"could not register '{hotkey_str}' (another app owns it?)")
+    print(f"D2R companion listening — press {hotkey_str} with the RUNES tab "
           "open (Ctrl-C to quit).")
     sys.stdout.flush()
     try:
@@ -451,9 +535,9 @@ def _listen_win(cfg, keysym):
 
 
 def listen(cfg):
-    keysym = (cfg.get("hotkey") or "F8")
+    hotkey_str = (cfg.get("hotkey") or "F8")
     if sys.platform.startswith("win"):
-        _listen_win(cfg, keysym)
+        _listen_win(cfg, hotkey_str)
         return
     from Xlib import X, display, XK
     d = display.Display()
@@ -463,21 +547,20 @@ def listen(cfg):
     except Exception:
         pass
     root = d.screen().root
-    xk = XK.string_to_keysym(keysym)
-    keycode = d.keysym_to_keycode(xk) if xk else None
+    keycode, mask = hotkey_to_xlib(hotkey_str, d)
     if not keycode:
-        sys.exit(f"could not map {keysym} keysym")
+        sys.exit(f"could not map '{hotkey_str}'")
     grabbed = 0
-    for mod in (0, X.LockMask, X.Mod2Mask, X.LockMask | X.Mod2Mask):
+    for mod in (mask, mask | X.LockMask, mask | X.Mod2Mask, mask | X.LockMask | X.Mod2Mask):
         try:
             root.grab_key(keycode, mod, True, X.GrabModeAsync, X.GrabModeAsync)
             grabbed += 1
         except Exception:
             pass
     if not grabbed:
-        sys.exit(f"could not grab {keysym} (another app owns it?)")
+        sys.exit(f"could not grab '{hotkey_str}' (another app owns it?)")
     d.sync()
-    print(f"D2R companion listening — press {keysym} with the RUNES tab open (Ctrl-C to quit).")
+    print(f"D2R companion listening — press {hotkey_str} with the RUNES tab open (Ctrl-C to quit).")
     sys.stdout.flush()
     while True:
         try:
@@ -485,10 +568,12 @@ def listen(cfg):
         except Exception:
             continue
         if ev.type == X.KeyPress and ev.detail == keycode:
-            try:
-                do_capture(cfg, notify=True, verbose=False)
-            except Exception as e:
-                _notify("D2R Runewords", f"error: {e}", critical=True)
+            clean_state = ev.state & ~(X.LockMask | X.Mod2Mask)
+            if clean_state == mask:
+                try:
+                    do_capture(cfg, notify=True, verbose=False)
+                except Exception as e:
+                    _notify("D2R Runewords", f"error: {e}", critical=True)
 
 
 def do_capture(cfg, notify=False, verbose=False):
