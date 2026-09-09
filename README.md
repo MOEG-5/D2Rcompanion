@@ -52,8 +52,9 @@ tab in D2R, press the hotkey. Settings are stored in
   **complete set bonus** for the full set.
 - **Live search** — filters the active tab as you type; partial words match
   names, runes, item types, effect text, recipe ingredients and craft rolls.
-- **Global hotkey** — press a key once and it's your scan key forever
-  (remembered across runs). Press it in-game to re-scan instantly.
+- **Global hotkey** — bind a key or combination such as `Ctrl+J`; only that
+  combination is captured, so ordinary typing and in-game single-key actions
+  remain available. The binding is remembered across runs.
 - **CLI** — the same scanning engine without the GUI.
 
 ## Quick start (GUI)
@@ -65,12 +66,13 @@ python3 d2rc.py
 (Windows: run the downloaded `D2RCompanion.exe`; Linux: the bundled
 `D2RCompanion/D2RCompanion` — see the download section above.)
 
-1. On first run, click **Assign hotkey** and press the key you want to use
-   for scanning (ESC, Enter, Tab, Space, Delete and modifier keys are
-   refused so you don't steal important in-game buttons).
+1. On first run, click **Assign hotkey** and press the key or combination you
+   want to use for scanning (for example `Ctrl+J`). ESC, Enter, Tab, Space,
+   Delete and modifier-only keys are refused so you don't steal important
+   in-game buttons.
 2. Open Diablo 2: Resurrected, open your stash on the **RUNES** tab.
-3. Press your hotkey — the app screenshots the screen and lists what you
-   can craft.
+3. Press your hotkey — the app screenshots the screen, brings its results
+   window to the front, and lists what you can craft.
 
 Pre-load a screenshot instead of scanning (useful for testing):
 
@@ -128,7 +130,7 @@ Running from source needs Python 3 with Pillow, numpy and python-xlib.
 
 Release builds are produced automatically by
 [GitHub Actions](.github/workflows/build-release.yml): push a tag
-(`git tag v0.1.6 && git push origin v0.1.6`) and both platform zips are
+(`git tag v0.1.7 && git push origin v0.1.7`) and both platform zips are
 built and attached to a GitHub Release.
 
 ## Data source
